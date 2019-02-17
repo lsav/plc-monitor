@@ -1,0 +1,13 @@
+version: "3.6"
+
+services:
+  web:
+    build: "."
+    command: >
+      gunicorn --reload -b :5000 --access-logfile "-" "monitor.app:create_app()"
+    env_file:
+      - ".env"
+    ports:
+      - "8000:5000"
+    volumes:
+      - ".:/app"
