@@ -9,7 +9,7 @@ import shlex
 import subprocess
 import time
 
-TIMEOUT = 5  # seconds
+TIMEOUT = 15  # seconds
 MIN_PROCS = 10
 
 PING_CMD = "ansible all -i '{host},' --key-file secret/planetlab.pem \
@@ -113,3 +113,4 @@ if __name__ == "__main__":
     with open(os.path.join("resources", "testnodes.txt")) as f:
         nodes = [x.strip() for x in f.readlines() if not x.isspace()]
         result = get_node_data(nodes)
+        print(result)

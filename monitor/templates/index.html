@@ -6,6 +6,25 @@
 -->
 
 <!DOCTYPE html>
+<head>
+  <!-- https://stackoverflow.com/questions/14267781/sorting-html-table-with-javascript -->
+  <script type="text/javascript">
+    window.onload = function() { 
+      const getCellValue = (tr, idx) => tr.children[idx].innerText || tr.children[idx].textContent;
+
+      const comparer = (idx, asc) => (a, b) => ((v1, v2) => 
+          v1 !== '' && v2 !== '' && !isNaN(v1) && !isNaN(v2) ? v1 - v2 : v1.toString().localeCompare(v2)
+          )(getCellValue(asc ? a : b, idx), getCellValue(asc ? b : a, idx));
+
+      document.querySelectorAll('th').forEach(th => th.addEventListener('click', (() => {
+          const table = th.closest('table');
+          Array.from(table.querySelectorAll('tr:nth-child(n+2)'))
+              .sort(comparer(Array.from(th.parentNode.children).indexOf(th), this.asc = !this.asc))
+              .forEach(tr => table.appendChild(tr) );
+      })));
+    }
+  </script>
+</head>
 <html>
 
 <title>PLC Monitor</title>
@@ -34,7 +53,7 @@ Only nodes that have been alive at some point in the last day are displayed.
 <table id="myTable" class="w3-table-all">
   <tr>
     {% for heading in headings %}
-    <th onclick="w3.sortHTML('#myTable', '.item', 'td:nth-child({{ loop.index }})')" style="cursor:pointer">{{ heading }} &#x21D5;</th>
+    <th>{{ heading }} &#x21D5;</th>
     {% endfor %}
   </tr>
 
