@@ -1,0 +1,45 @@
+- name: Provision a new node
+  hosts: all
+  gather_facts: no
+
+  tasks:
+    - name: Dummy action to add new host to known hosts
+      raw: echo hello
+
+    - name: SCP files
+      local_action:
+        module: shell scp -i ../secret/planetlab.pem ../resources/{{ item }} ubc_cpen431_1@{{ inventory_hostname }}:~
+      with_items:
+        - gpg.txt
+        - jre.rpm
+
+    - name: Enable yum
+      raw: sudo mv gpg.txt /etc/pki/rpm-gpg/RPM-GPG-KEY-fedora-8 && \
+        sudo rpm --import /etc/pki/rpm-gpg/RPM-GPG-KEY-fedora-8
+
+    - name: Install simplejson
+      raw: sudo yum install python-simplejson -y
+
+    - name: Install java, then delete the rpm file
+      shell: sudo rpm -i jre.rpm && rm jre.rpm
+      register: install_result
+      failed_when: "install_result.stderr and not 'already installed' in install_result.stderr"
+
+    - name: Create a directory for the server
+      file:
+        path: ~/server
+        state: directory
+
+    - name: Copy the instrument
+      copy:
+        src: ../resources/instrument.py
+        dest: ~/instrument.py
+
+    - name: Make the instrument executable
+      file:
+        path: ~/instrument.py
+        mode: a+x
+
+    - name: Start the instrument
+      shell: nohup ~/instrument.py {{ aws_ip }}:{{ aws_port }} {{ inventory_hostname }} >/dev/null 2>&1 &
+      ignore_errors: yes

@@ -21,13 +21,13 @@ def create_app(settings_override=None):
     if app.debug:
         app.wsgi_app = DebuggedApplication(app.wsgi_app, evalex=True)
 
-    tracker = NodeTracker(app.config['NODE_FILE'])
+    tracker = NodeTracker(app.config['NODE_FILE'], app.config['AWS_PORT'])
     tracker.start()
 
     @app.route('/')
     def index():
-        last_update, data = tracker.get_output()
+        living, dead = tracker.get_output()
         return render_template('index.html', headings=tracker.HEADINGS, 
-                               last_update=last_update, data=data)
+                               living=living, dead=dead)
 
     return app

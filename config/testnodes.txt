@@ -1,0 +1,5 @@
+planetlab-2.calpoly-netlab.net
+planetlab1.cs.ubc.ca
+pl2.cs.montana.edu
+plab1.engr.sjsu.edu
+planetlab02.cs.washington.edu

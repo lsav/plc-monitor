@@ -3,7 +3,7 @@
 FROM python:3.6-alpine
 LABEL maintainer="Lise Savard"
 
-RUN apk update && apk add build-base libffi-dev openssl-dev openssh
+RUN apk update && apk add build-base libffi-dev openssl-dev openssh curl
 
 WORKDIR /app
 

@@ -38,17 +38,15 @@
 <p>This page periodically collects the following data for all 704 PLC nodes:</p>
 
 <ul>
-  <li><strong>Alive:</strong> A node is considered alive if it is reachable by SSH.</li>
+  <li><strong>Alive:</strong> A node is considered alive if it has sent a heartbeat in the last hour.</li>
   <li><strong>Uptime:</strong> Percentage of times, in the last 24 hours, that a node was alive.</li>
-  <li><strong>Latency:</strong> Time taken to establish an ssh connection, in seconds.</li>
+  <li><strong>SSH Time:</strong> Time taken to establish an ssh connection, in seconds.</li>
   <li><strong>SCP Time:</strong> Time taken to transfer a small (~4KB) plain text file.</li>
-  <li><strong>CPU:</strong> CPU utilization, as of last check. (currently unimplemented)</li>
-  <li><strong>Memory:</strong> Memory consumption, as of last check. (currently unimplemented)</li>
+  <li><strong>CPU:</strong> Average CPU utilization over 15 min, as reported in the last heartbeat.</li>
+  <li><strong>Memory:</strong> Instantaneous memory consumption, as reported in the last heartbeat.</li>
 </ul>
 
-Only nodes that have been alive at some point in the last day are displayed.
-
-<p>Last update: {{ last_update }}</p>
+<p>Only nodes that have been alive at some point in the last day are displayed.</p>
 
 <table id="myTable" class="w3-table-all">
   <tr>
@@ -57,7 +55,7 @@ Only nodes that have been alive at some point in the last day are displayed.
     {% endfor %}
   </tr>
 
-  {% for row in data %}
+  {% for row in living %}
   <tr class="item">
     {% for column in row %}
     <td>{{ column }}</td>
@@ -65,6 +63,14 @@ Only nodes that have been alive at some point in the last day are displayed.
   </tr>
   {% endfor %}
 </table>
+
+<p>The following nodes are dead:</p>
+
+<ul>
+  {% for node in dead %}
+  <li>{{node}}</li>
+  {% endfor %}
+</ul>
 
 </body>
 </html>
