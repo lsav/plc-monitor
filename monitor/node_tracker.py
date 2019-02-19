@@ -1,6 +1,9 @@
 """
 Stateful class that tracks node health data.
 """
+import logging
+logger = logging.getLogger("monitor.app")
+
 from collections import deque
 from datetime import datetime, timedelta
 from math import exp, inf, pow
@@ -14,16 +17,16 @@ import time
 
 
 class NodeTracker:
-    HEADINGS = ["Host", "Is Alive", "SSH Time (ms)", "SCP Time (ms)", 
-            "Uptime (%)", "CPU (%)", "Memory (%)", "Last Update (GMT)"]
-    TIMEOUT = 20  # how many seconds to wait for an SSH or SCP response
+    HEADINGS = ["Host", "Is Alive", "SCP Time (ms)", "Uptime (%)", 
+                "CPU (%)", "Memory (%)", "Last Update (GMT)"]
+    SCP_TIMEOUT = 20  # seconds
+    WAKE_TIMEOUT = 300  # 5 minutes
     PRUNE_INTERVAL = 15 * 60  # 15 minutes
 
     @property
     def HOST_DATUM(self):
         return {
-            "uptime": 0, 
-            "ssh_time": inf, 
+            "uptime": 0,
             "is_alive": False, 
             "scp_time": inf,
             "cpu": "0",
@@ -31,7 +34,7 @@ class NodeTracker:
             "last_update": datetime.now(),
         }
 
-    def __init__(self, hosts_file, port):
+    def __init__(self, hosts_file, port, secret):
         with open(os.path.join("config", hosts_file)) as f:
             nodes = [x.strip() for x in f.readlines() if not x.isspace()]
         
@@ -44,6 +47,7 @@ class NodeTracker:
                                 stdout=subprocess.PIPE).stdout.decode('utf-8')
         self.public_ip = result.strip()
         self.port = port
+        self.secret = secret
 
         # host history table, track # times host was up in the last 24 hours
         # key = hostname, val = queue of (time, boolean)
@@ -59,6 +63,9 @@ class NodeTracker:
         # this is necessary to synchronize updating operations
         # prevent get_output() returning nonsense data
         self.lock = threading.Lock()
+
+        logger.info("Tracking %d nodes at (%s:%d)", len(nodes), 
+                    self.public_ip, port)
 
 #region public
 
@@ -94,12 +101,11 @@ class NodeTracker:
                 continue
 
             is_alive = "yes" if datum['is_alive'] else "no"
-            ssh_time = "{:.2f}".format(datum['ssh_time'] * 1000)
             scp_time = "{:.2f}".format(datum['scp_time'] * 1000)
             uptime = "{:.0f}".format(datum['uptime'] * 100)
             last_update = datum['last_update'].strftime("%-I:%M %p %d-%m-%Y")
                 
-            living.append([host, is_alive, ssh_time, scp_time, uptime, 
+            living.append([host, is_alive, scp_time, uptime, 
                 datum['cpu'], datum['memory'], last_update])
 
         self.lock.release()
@@ -114,22 +120,31 @@ class NodeTracker:
         sock.bind(('', self.port))
 
         while True:
-            raw, _ = sock.recvfrom(1024)  # should be big enough for data...
+            raw, addr = sock.recvfrom(1024)  # should be big enough for data...
             try:
-                data = json.loads(raw)
+                data = json.loads(raw.decode())
                 t = threading.Thread(target=self.__handle_heartbeat,
                                      args=(data,))
                 t.start()
             except:
+                logger.warning("[Heartbeat] Unparseable message: %s", (addr,))
                 continue
 
     def __handle_heartbeat(self, data):
         """Parse a heartbeat message and perform the appropriate updates."""
-        now = datetime.now()
-        nodename = data["nodename"]
+        try:
+            nodename = data["nodename"]
+            cpu = data["cpu"]
+            memory = data["memory"]
+            health = self.node_health[nodename]
+            assert(data["secret"] == self.secret)
+        except (KeyError, AssertionError):
+            logger.warning("[Heartbeat] Bad heartbeat message: %s", data)
+            return
 
-        # check the node's ssh & scp time
-        ssh_time = self.__ssh_time(nodename)
+        now = datetime.now()
+
+        # check the node's scp time
         scp_time = self.__scp_time(nodename)
 
         self.lock.acquire()
@@ -139,20 +154,16 @@ class NodeTracker:
         self.dead_nodes.discard(nodename)
 
         # update node data
-        self.node_health[nodename].update({
+        health.update({
             "is_alive": True,
-            "cpu": data["cpu"],
-            "memory": data["memory"],
-            "ssh_time": ssh_time,
+            "cpu": cpu,
+            "memory": memory,
             "scp_time": scp_time,
             "last_update": now,
         })
 
         self.lock.release()
-
-        # clean up residuals
-        if scp_time < inf:
-            self.__cleanup_scp(nodename)
+        logger.info("[Heartbeat] Handled message from: %s", nodename)
 
 #endregion heartbeat
 #region wakethedead
@@ -175,22 +186,23 @@ class NodeTracker:
         try:
             lucky_winner = random.sample(self.dead_nodes, 1)[0]
         except (ValueError, IndexError):
+            logger.warning("[Wakeup] Failed to get a dead node!")
             return
 
         # wake up the lucky winner -- this probably won't work :(
         cmd = ("ansible-playbook -i '{host},' playbooks/provision.yml \
-               -u ubc_cpen431_1 -e 'aws_ip={ip} aws_port={port}' \
-               --key-file=secret/planetlab.pem").format(
-                   host=lucky_winner, ip=self.public_ip, port=self.port)
+               -u ubc_cpen431_1 -e 'aws_ip={ip} aws_port={port} secret={secret}' \
+               --key-file=secret/planetlab.pem")
+        cmd = cmd.format(host=lucky_winner, ip=self.public_ip, 
+                         port=self.port, secret=self.secret)
         try:
-            # if it takes longer than this, we don't want the node anyway
-            subprocess.run(shlex.split(cmd), check=True, timeout=500)
+            subprocess.run(shlex.split(cmd), check=True, 
+                           timeout=self.WAKE_TIMEOUT)
         except subprocess.SubprocessError:
-            print("Failed to wake node: ", lucky_winner)
+            logger.info("[Wakeup] Failed to wake node: %s", lucky_winner)
             return
 
         # wow it worked!
-        print("Woke up node: ", lucky_winner)
         self.lock.acquire()
 
         self.living_nodes.add(lucky_winner)
@@ -201,6 +213,7 @@ class NodeTracker:
         })
 
         self.lock.release()
+        logger.info("[Wakeup] Woke up node: %s", lucky_winner)
 
 #endregion wakethedead
 #region pruning
@@ -228,6 +241,7 @@ class NodeTracker:
                 health.update({"is_alive": False, "last_update": now})
                 self.living_nodes.discard(node)
                 self.dead_nodes.add(node)
+                logger.info("[Pruning] Demoted node: %s", node)
             
             # update history, prune off old entries
             hist.append((now, health["is_alive"]))
@@ -243,42 +257,19 @@ class NodeTracker:
 #endregion pruning
 #region latency
 
-    def __ssh_time(self, nodename):
-        """Report the time it takes to successfully SSH into a single host.
-        If unsucessful or timed out, return math.inf.
-        """
-        cmd = "ansible all -i '{host},' --key-file secret/planetlab.pem \
-            -m raw -a 'echo hello' -u ubc_cpen431_1".format(host=nodename)
-        start_time = time.time()
-        try:
-            output = subprocess.run(shlex.split(cmd), check=True, 
-                                                timeout=self.TIMEOUT)
-        except subprocess.SubprocessError:
-            return inf
-        return time.time() - start_time
-
     def __scp_time(self, nodename):
-        """Report the time it takes to successfully SSH into a single host.
-        If unsucessful or timed out, return math.inf.
+        """Report the time it takes to successfully SCP a small file to a 
+        single host. If unsucessful or timed out, return math.inf.
         """
         scp_cmd = "scp -i secret/planetlab.pem resources/sonnets.txt \
             ubc_cpen431_1@{host}:~".format(host=nodename)
         start_time = time.time()
         try:
             output = subprocess.run(shlex.split(scp_cmd), check=True, 
-                                                timeout=self.TIMEOUT)
+                                                timeout=self.SCP_TIMEOUT)
         except subprocess.SubprocessError:
             return inf
         return time.time() - start_time
-
-    def __cleanup_scp(self, nodename):
-        """Remove the previously SCPed file."""
-        rm_cmd = "ansible all -i '{host},' --key-file secret/planetlab.pem \
-            -m raw -a 'rm ~/sonnets.txt' -u ubc_cpen431_1".format(host=nodename)
-        try:
-            subprocess.run(shlex.split(rm_cmd), timeout=self.TIMEOUT)
-        except subprocess.SubprocessError:
-            pass
 
 #endregion latency
 

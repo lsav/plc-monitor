@@ -1,3 +1,4 @@
+import logging
 from flask import Flask, render_template
 from werkzeug.debug import DebuggedApplication
 
@@ -21,8 +22,14 @@ def create_app(settings_override=None):
     if app.debug:
         app.wsgi_app = DebuggedApplication(app.wsgi_app, evalex=True)
 
-    tracker = NodeTracker(app.config['NODE_FILE'], app.config['AWS_PORT'])
+    tracker = NodeTracker(app.config['NODE_FILE'], app.config['AWS_PORT'], 
+                          app.config['SECRET'])
     tracker.start()
+
+    if not app.debug:
+        app.logger.addHandler(logging.handlers.RotatingFileHandler(
+            "monitor.log", maxBytes=8096, backupCount=3))
+        app.logger.setLevel(logging.INFO)
 
     @app.route('/')
     def index():

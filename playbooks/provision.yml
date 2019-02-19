@@ -30,6 +30,9 @@
         path: ~/server
         state: directory
 
+    - name: Kill current running instrument
+      shell: pkill instrument.py
+
     - name: Copy the instrument
       copy:
         src: ../resources/instrument.py
@@ -41,5 +44,5 @@
         mode: a+x
 
     - name: Start the instrument
-      shell: nohup ~/instrument.py {{ aws_ip }}:{{ aws_port }} {{ inventory_hostname }} >/dev/null 2>&1 &
+      shell: nohup ~/instrument.py {{ aws_ip }}:{{ aws_port }} {{ inventory_hostname }} {{ secret }} >/dev/null 2>&1 &
       ignore_errors: yes
