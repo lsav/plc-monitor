@@ -7,6 +7,7 @@ logger = logging.getLogger("gunicorn.error")
 from collections import deque
 from datetime import datetime, timedelta
 from math import exp, inf, pow
+import json
 import os
 import random
 import shlex
@@ -136,13 +137,19 @@ class NodeTracker:
     def __handle_heartbeat(self, data):
         """Parse a heartbeat message and perform the appropriate updates."""
         try:
-            nodename = data["nodename"]
-            cpu = data["cpu"]
-            memory = data["memory"]
+            nodename = data["node"]
+            cpu = float(data["cpu"])
+            memory = float(data["memory"])
             health = self.node_health[nodename]
             assert(data["secret"] == self.secret)
-        except (KeyError, AssertionError):
-            logger.warning("[Heartbeat] Bad heartbeat message: %s", data)
+        except KeyError:
+            logger.warning("[Heartbeat] Malformed heartbeat message: %s", data)
+            return
+        except AssertionError:
+            logger.warning("[Heartbeat] Wrong secret: %s", data)
+            return
+        except Exception as e:
+            logger.warning("[Heartbeat] Unhandleable heartbeat: %s", data)
             return
 
         now = datetime.now()

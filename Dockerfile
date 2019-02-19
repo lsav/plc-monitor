@@ -13,5 +13,5 @@ RUN pip install -r requirements.txt
 COPY . .
 
 EXPOSE 5000
-EXPOSE 60001
+EXPOSE 60001/udp
 CMD ["gunicorn", "-b", ":5000", "-b", ":60001", "--log-file", "gunicorn.log", "--log-level", "DEBUG", "monitor.app:create_app()"]
