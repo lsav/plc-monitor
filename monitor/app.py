@@ -26,11 +26,6 @@ def create_app(settings_override=None):
                           app.config['SECRET'])
     tracker.start()
 
-    if not app.debug:
-        app.logger.addHandler(logging.handlers.RotatingFileHandler(
-            "monitor.log", maxBytes=8096, backupCount=3))
-        app.logger.setLevel(logging.INFO)
-
     @app.route('/')
     def index():
         living, dead = tracker.get_output()

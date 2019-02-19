@@ -13,4 +13,5 @@ RUN pip install -r requirements.txt
 COPY . .
 
 EXPOSE 5000
-CMD ["gunicorn", "-b", ":5000", "--access-logfile", "-", "monitor.app:create_app()"]
+EXPOSE 60001
+CMD ["gunicorn", "-b", ":5000", "--log-file", "gunicorn.log", "--log-level", "DEBUG", "monitor.app:create_app()"]

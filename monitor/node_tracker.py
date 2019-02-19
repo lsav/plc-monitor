@@ -2,7 +2,7 @@
 Stateful class that tracks node health data.
 """
 import logging
-logger = logging.getLogger("monitor.app")
+logger = logging.getLogger("gunicorn.error")
 
 from collections import deque
 from datetime import datetime, timedelta
@@ -127,7 +127,7 @@ class NodeTracker:
                                      args=(data,))
                 t.start()
             except:
-                logger.warning("[Heartbeat] Unparseable message: %s", (addr,))
+                logger.info("[Heartbeat] Unparseable message: %s", (addr,))
                 continue
 
     def __handle_heartbeat(self, data):
@@ -163,7 +163,7 @@ class NodeTracker:
         })
 
         self.lock.release()
-        logger.info("[Heartbeat] Handled message from: %s", nodename)
+        logger.debug("[Heartbeat] Handled message from: %s", nodename)
 
 #endregion heartbeat
 #region wakethedead
@@ -192,7 +192,7 @@ class NodeTracker:
         # wake up the lucky winner -- this probably won't work :(
         cmd = ("ansible-playbook -i '{host},' playbooks/provision.yml \
                -u ubc_cpen431_1 -e 'aws_ip={ip} aws_port={port} secret={secret}' \
-               --key-file=secret/planetlab.pem")
+               --key-file=instance/planetlab.pem")
         cmd = cmd.format(host=lucky_winner, ip=self.public_ip, 
                          port=self.port, secret=self.secret)
         try:
@@ -261,7 +261,7 @@ class NodeTracker:
         """Report the time it takes to successfully SCP a small file to a 
         single host. If unsucessful or timed out, return math.inf.
         """
-        scp_cmd = "scp -i secret/planetlab.pem resources/sonnets.txt \
+        scp_cmd = "scp -i instance/planetlab.pem resources/sonnets.txt \
             ubc_cpen431_1@{host}:~".format(host=nodename)
         start_time = time.time()
         try:

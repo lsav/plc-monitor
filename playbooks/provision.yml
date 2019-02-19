@@ -8,7 +8,7 @@
 
     - name: SCP files
       local_action:
-        module: shell scp -i ../secret/planetlab.pem ../resources/{{ item }} ubc_cpen431_1@{{ inventory_hostname }}:~
+        module: shell scp -i ../instance/planetlab.pem ../resources/{{ item }} ubc_cpen431_1@{{ inventory_hostname }}:~
       with_items:
         - gpg.txt
         - jre.rpm

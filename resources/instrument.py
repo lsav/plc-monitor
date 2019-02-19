@@ -40,7 +40,7 @@ class Heartbeat:
     def send(self):
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            message = json.dumps({
+            message = simplejson.dumps({
                 "node": self.nodename,
                 "secret": self.secret,
                 "cpu": self.__get_cpu(),
