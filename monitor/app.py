@@ -28,7 +28,7 @@ def create_app(settings_override=None):
 
     @app.route('/')
     def index():
-        living, dead = tracker.get_output()
+        living, dead = tracker.report()
         return render_template('index.html', headings=tracker.HEADINGS, 
                                living=living, dead=dead)
 

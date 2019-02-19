@@ -18,9 +18,9 @@ import time
 
 
 class NodeTracker:
-    HEADINGS = ["Host", "Is Alive", "SCP Time (ms)", "Uptime (%)", 
+    HEADINGS = ["Host", "Is Alive", "SCP Time (s)", "Uptime (%)", 
                 "CPU (%)", "Memory (%)", "Last Update (GMT)"]
-    SCP_TIMEOUT = 20  # seconds
+    SCP_TIMEOUT = 30  # seconds
     WAKE_TIMEOUT = 300  # 5 minutes
     PRUNE_INTERVAL = 15 * 60  # 15 minutes
 
@@ -62,7 +62,7 @@ class NodeTracker:
         self.dead_nodes = set(nodes)
 
         # this is necessary to synchronize updating operations
-        # prevent get_output() returning nonsense data
+        # prevent report() returning nonsense data
         self.lock = threading.Lock()
 
         logger.info("Tracking %d nodes at (%s:%d)", len(nodes), 
@@ -84,7 +84,7 @@ class NodeTracker:
         t_prune = threading.Thread(target=self.__pruning_thread)
         t_prune.start()
 
-    def get_output(self):
+    def report(self):
         """Return a tuple (living, dead), where `living` is a 2D array
         containing the health data of all the living nodes, and `dead` is
         a list of dead nodes.
@@ -102,9 +102,9 @@ class NodeTracker:
                 continue
 
             is_alive = "yes" if datum['is_alive'] else "no"
-            scp_time = "{:.2f}".format(datum['scp_time'] * 1000)
+            scp_time = "{:.2f}".format(datum['scp_time'])
             uptime = "{:.0f}".format(datum['uptime'] * 100)
-            last_update = datum['last_update'].strftime("%-I:%M %p %d-%m-%Y")
+            last_update = datum['last_update'].strftime("%H:%M %d-%m-%Y")
                 
             living.append([host, is_alive, scp_time, uptime, 
                 datum['cpu'], datum['memory'], last_update])
@@ -166,8 +166,8 @@ class NodeTracker:
         # update node data
         health.update({
             "is_alive": True,
-            "cpu": cpu,
-            "memory": memory,
+            "cpu": "{:.2}".format(cpu),
+            "memory": "{:.2}".format(memory),
             "scp_time": scp_time,
             "last_update": now,
         })
@@ -299,5 +299,5 @@ if __name__ == '__main__':
 
     tracker.start()
     while True:
-        print(*tracker.get_output())
+        print(*tracker.report())
         time.sleep(10)

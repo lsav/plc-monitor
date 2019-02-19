@@ -40,7 +40,6 @@
 <ul>
   <li><strong>Alive:</strong> A node is considered alive if it has sent a heartbeat in the last hour.</li>
   <li><strong>Uptime:</strong> Percentage of times, in the last 24 hours, that a node was alive.</li>
-  <li><strong>SSH Time:</strong> Time taken to establish an ssh connection, in seconds.</li>
   <li><strong>SCP Time:</strong> Time taken to transfer a small (~4KB) plain text file.</li>
   <li><strong>CPU:</strong> Average CPU utilization over 15 min, as reported in the last heartbeat.</li>
   <li><strong>Memory:</strong> Instantaneous memory consumption, as reported in the last heartbeat.</li>
@@ -64,7 +63,7 @@
   {% endfor %}
 </table>
 
-<p>The following nodes are dead:</p>
+<p>The following nodes are presumed dead:</p>
 
 <ul>
   {% for node in dead %}

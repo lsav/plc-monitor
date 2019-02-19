@@ -1,7 +1,6 @@
 #!/usr/bin/python
-"""
-Small Python (2.5) app to send heartbeats from planetlab nodes.
-"""
+"""Small Python (2.5) app to send heartbeats from planetlab nodes."""
+
 import simplejson
 import os
 import random
@@ -18,7 +17,6 @@ class Heartbeat:
         self.secret = secret
 
     def __get_cpu(self):
-        """Average CPU utilization in the last 15 min, according to top."""
         try:
             result = os.popen("top -n 1 -b | head -1 | awk '{print $NF}'")
             return float(result.read().strip())
@@ -26,7 +24,6 @@ class Heartbeat:
             return "N/A"
 
     def __get_memory(self):
-        """Average current memory use."""
         try:
             result = os.popen("free -t | tail -1 | awk '{print $2, $3}'")
             total, used = result.read().strip().split()
@@ -47,8 +44,6 @@ class Heartbeat:
                 "memory": self.__get_memory(),
             })
             sock.sendto(message, (self.server, self.port))
-
-            # quick-n-dirty log for debugging
             self.log(message)
         except Exception, e:
             self.log(str(e))
@@ -57,7 +52,7 @@ class Heartbeat:
 if __name__ == "__main__":
     args = sys.argv
     if len(args) != 4:
-        print("Usage: ./instrument.py hostname:port nodename secretkey")
+        print("Usage: ./instrument.py hostname:port nodename secret")
         sys.exit(1)
 
     # (mis)use Linux abstract sockets as a mutex
@@ -65,15 +60,11 @@ if __name__ == "__main__":
     lock_socket.bind('\0' + "instrument.py")
 
     hostname, port = args[1].split(":")
-    nodename = args[2]
-    secret = args[3]
-    heartbeat = Heartbeat(hostname, int(port), nodename, secret)
-
-    random.seed(nodename)
+    heartbeat = Heartbeat(hostname, int(port), args[2], args[3])
 
     while True:
         heartbeat.send()
 
-        # randomize the heartbeat -- help avoid overloading server
+        # randomize the heartbeat to avoid overloading server
         delay = 600 + 300 * random.random()
-        time.sleep(delay)  # send a beat every 10-15 min
+        time.sleep(delay)
