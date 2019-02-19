@@ -116,11 +116,14 @@ class NodeTracker:
 
     def __heartbeat_thread(self):
         """Listen for heartbeats."""
+        logger.debug("[Heartbeat] Thread started")
+
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.bind(('', self.port))
 
         while True:
             raw, addr = sock.recvfrom(1024)  # should be big enough for data...
+            logger.debug("[Heartbeat] Received: %s", (addr,))
             try:
                 data = json.loads(raw.decode())
                 t = threading.Thread(target=self.__handle_heartbeat,
@@ -170,6 +173,8 @@ class NodeTracker:
 
     def __wakeup_thread(self):
         """Periodically check in on dead nodes to see if they've woken up."""
+        logger.debug("[Wakeup] Thread started")
+
         while True:
             self.__try_wake()
 
@@ -202,7 +207,9 @@ class NodeTracker:
             logger.info("[Wakeup] Failed to wake node: %s", lucky_winner)
             return
 
-        # wow it worked!
+        # wow it worked! test the scp time
+        scp_time = self.__scp_time(nodename)
+
         self.lock.acquire()
 
         self.living_nodes.add(lucky_winner)
@@ -210,6 +217,7 @@ class NodeTracker:
         self.node_health[lucky_winner].update({
             "last_update": datetime.now(),
             "is_alive": True,
+            "scp_time": scp_time,
         })
 
         self.lock.release()
@@ -219,6 +227,7 @@ class NodeTracker:
 #region pruning
 
     def __pruning_thread(self):
+        logger.debug("[Pruning] Thread started")
         while True:
             self.__prune_living()
             time.sleep(self.PRUNE_INTERVAL)
@@ -277,7 +286,7 @@ class NodeTracker:
 if __name__ == '__main__':
     # test the module
     tracker = NodeTracker('testnodes.txt', 60001)
-    tracker.PRUNE_INTERVAL = 30
+    tracker.PRUNE_INTERVAL = 100
 
     tracker.start()
     while True:
