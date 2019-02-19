@@ -208,7 +208,7 @@ class NodeTracker:
             return
 
         # wow it worked! test the scp time
-        scp_time = self.__scp_time(nodename)
+        scp_time = self.__scp_time(lucky_winner)
 
         self.lock.acquire()
 
@@ -239,6 +239,8 @@ class NodeTracker:
         If a node is "alive" but hasn't been heard from in over 1 hour,
         change it to dead.
         """
+        logger.debug("[Pruning] Starting a pruning pass")
+
         self.lock.acquire()
 
         now = datetime.now()

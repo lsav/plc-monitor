@@ -21,7 +21,7 @@
       raw: sudo yum install python-simplejson -y
 
     - name: Install java, then delete the rpm file
-      shell: sudo rpm -i jre.rpm && rm jre.rpm
+      shell: sudo rpm -i jre.rpm; rm jre.rpm
       register: install_result
       failed_when: "install_result.stderr and not 'already installed' in install_result.stderr"
 
@@ -32,6 +32,7 @@
 
     - name: Kill current running instrument
       shell: pkill instrument.py
+      ignore_errors: yes
 
     - name: Copy the instrument
       copy:
@@ -45,4 +46,3 @@
 
     - name: Start the instrument
       shell: nohup ~/instrument.py {{ aws_ip }}:{{ aws_port }} {{ inventory_hostname }} {{ secret }} >/dev/null 2>&1 &
-      ignore_errors: yes
