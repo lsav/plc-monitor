@@ -299,15 +299,15 @@ class NodeTracker:
         """Report the time it takes to successfully SCP a small file to a 
         single host. If unsucessful or timed out, return SCP_TIMEOUT * 2.
         """
-        scp_cmd = "scp -i instance/planetlab.pem resources/sonnets.txt \
-            ubc_cpen431_1@{host}:~".format(host=nodename)
+        scp_cmd = "scp -o StrictHostKeyChecking=no -i instance/planetlab.pem \
+            resources/sonnets.txt ubc_cpen431_1@{host}:~".format(host=nodename)
         start_time = time.time()
         try:
             output = subprocess.run(shlex.split(scp_cmd), check=True, 
                                     timeout=self.SCP_TIMEOUT)
         except subprocess.SubprocessError:
             logger.debug("[SCP] Timed out: %s", nodename)
-            return self.SCP_TIMEOUT * 2
+            return self.SCP_TIMEOUT * 3
         return time.time() - start_time
 
 #endregion latency
