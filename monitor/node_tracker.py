@@ -24,14 +24,14 @@ class NodeTracker:
     WAKE_TIMEOUT = 300  # 5 minutes
     PRUNE_INTERVAL = 15 * 60  # 15 minutes
 
-    SCP_DECAY = 0.5
+    SCP_DECAY = 0.3
 
     @property
     def HOST_DATUM(self):
         return {
             "uptime": 0,
             "is_alive": False, 
-            "scp_time": self.SCP_TIMEOUT * 2,
+            "scp_time": None,
             "cpu": "0",
             "memory": "0",
             "last_update": datetime.now(),
@@ -105,7 +105,10 @@ class NodeTracker:
                 continue
 
             is_alive = "yes" if datum['is_alive'] else "no"
-            scp_time = "{:.2f}".format(datum['scp_time'])
+            try:
+                scp_time = "{:.2f}".format(datum['scp_time'])
+            except:
+                scp_time = "-"
             uptime = "{:.0f}".format(datum['uptime'] * 100)
             last_update = datum['last_update'].strftime("%H:%M %d-%m-%Y")
                 
@@ -123,10 +126,15 @@ class NodeTracker:
             return list(self.living_nodes)
 
         def sort_key(x):
-            healt = self.node_health[x]
-            return (-health["uptime"], health["scp_time"])
+            health = self.node_health[x]
+            uptime = health["uptime"]
+            scp_time = health["scp_time"] or inf
+            return (-uptime, scp_time)
 
+        self.lock.acquire()
         sorted_nodes = sorted(self.living_nodes, key=sort_key)
+        self.lock.release()
+        
         return sorted_nodes[:k]
 
 #endregion public
@@ -155,8 +163,6 @@ class NodeTracker:
         """Parse a heartbeat message and perform the appropriate updates."""
         try:
             nodename = data["node"]
-            cpu = float(data["cpu"])
-            memory = float(data["memory"])
             health = self.node_health[nodename]
             assert(data["secret"] == self.secret)
         except KeyError:
@@ -169,11 +175,25 @@ class NodeTracker:
             logger.warning("[Heartbeat] Unhandleable heartbeat: %s", data)
             return
 
+        try:
+            cpu = "{:.2f}".format(float(data["cpu"]))
+        except:
+            cpu = "-"
+
+        try:
+            memory = "{:.2f}".format(float(data["memory"]))
+        except:
+            memory = "-"
+
         now = datetime.now()
 
         # check the node's scp time
-        β = self.SCP_DECAY
-        scp_time = health["scp_time"] * β + (1 - β) * self.__scp_time(nodename)
+        new_scp = self.__scp_time(nodename)
+        if health["scp_time"] is None:
+            scp_time = new_scp
+        else:
+            β = self.SCP_DECAY
+            scp_time = health["scp_time"] * β + (1 - β) * new_scp
 
         self.lock.acquire()
 
@@ -184,8 +204,8 @@ class NodeTracker:
         # update node data
         health.update({
             "is_alive": True,
-            "cpu": "{:.2}".format(cpu),
-            "memory": "{:.2}".format(memory),
+            "cpu": cpu,
+            "memory": memory,
             "scp_time": scp_time,
             "last_update": now,
         })
