@@ -20,11 +20,6 @@ import time
 class NodeTracker:
     HEADINGS = ["Host", "Is Alive", "SCP Time (s)", "Uptime (%)", 
                 "CPU (%)", "Memory (%)", "Last Update (GMT)"]
-    SCP_TIMEOUT = 20  # seconds
-    WAKE_TIMEOUT = 300  # 5 minutes
-    PRUNE_INTERVAL = 15 * 60  # 15 minutes
-
-    SCP_DECAY = 0.3
 
     @property
     def HOST_DATUM(self):
@@ -32,13 +27,16 @@ class NodeTracker:
             "uptime": 0,
             "is_alive": False, 
             "scp_time": None,
-            "cpu": "0",
-            "memory": "0",
+            "cpu": None,
+            "memory": None,
             "last_update": datetime.now(),
         }
 
-    def __init__(self, hosts_file, port, secret):
-        with open(os.path.join("config", hosts_file)) as f:
+    def __init__(self, config):
+        self.config = config
+
+        node_file = config["NODE_FILE"]
+        with open(os.path.join("config", node_file)) as f:
             nodes = [x.strip() for x in f.readlines() if not x.isspace()]
         
         self.nodes = nodes
@@ -49,8 +47,8 @@ class NodeTracker:
         result = subprocess.run(shlex.split("curl https://ipinfo.io/ip"), 
                                 stdout=subprocess.PIPE).stdout.decode('utf-8')
         self.public_ip = result.strip()
-        self.port = port
-        self.secret = secret
+        self.port = config["AWS_PORT"]
+        self.secret = config["SECRET"]
 
         # host history table, track # times host was up in the last 24 hours
         # key = hostname, val = queue of (time, boolean)
@@ -68,11 +66,12 @@ class NodeTracker:
         self.lock = threading.Lock()
 
         logger.info("Tracking %d nodes at (%s:%d)", len(nodes), 
-                    self.public_ip, port)
+                    self.public_ip, self.port)
+        logger.info("Config: %s", config)
 
 #region public
 
-    def start(self, wake_dead=True):
+    def start(self):
         """Start tracking the nodes."""
         # listening for heartbeats
         t_client = threading.Thread(target=self.__heartbeat_thread)
@@ -83,7 +82,7 @@ class NodeTracker:
         t_prune.start()
 
         # periodically prod a dead node to see if it's woken up
-        if wake_dead:
+        if self.config["WAKE_DEAD"]:
             t_wake = threading.Thread(target=self.__wakeup_thread)
             t_wake.start()
 
@@ -109,18 +108,23 @@ class NodeTracker:
                 scp_time = "{:.2f}".format(datum['scp_time'])
             except:
                 scp_time = "-"
+
             uptime = "{:.0f}".format(datum['uptime'] * 100)
             last_update = datum['last_update'].strftime("%H:%M %d-%m-%Y")
+            cpu = ("{:.2f}".format(datum['cpu']) 
+                   if datum['cpu'] is not None else "-")
+            memory = ("{:.2f}".format(datum['memory']) 
+                      if datum['memory'] is not None else "-")
                 
             living.append([host, is_alive, scp_time, uptime, 
-                datum['cpu'], datum['memory'], last_update])
+                cpu, memory, last_update])
 
         self.lock.release()
         return living, dead
 
     def get_best_nodes(self, k):
         """Return a list of the k best nodes. The best nodes have the highest 
-        uptime and the lowest scp time, in that order of importance.
+        uptime, then the lowest combination of scp time, CPU use, memory.
         """
         if k > len(self.living_nodes):
             return list(self.living_nodes)
@@ -128,8 +132,9 @@ class NodeTracker:
         def sort_key(x):
             health = self.node_health[x]
             uptime = health["uptime"]
-            scp_time = health["scp_time"] or inf
-            return (-uptime, scp_time)
+            scp_time = health["scp_time"] or self.config["SCP_TIMEOUT"] * 3
+            cpu = health["cpu"] or 50
+            return (-uptime, scp_time + 0.1 * cpu)
 
         self.lock.acquire()
         sorted_nodes = sorted(self.living_nodes, key=sort_key)
@@ -176,14 +181,14 @@ class NodeTracker:
             return
 
         try:
-            cpu = "{:.2f}".format(float(data["cpu"]))
+            cpu = float(data["cpu"])
         except:
-            cpu = "-"
+            cpu = None
 
         try:
-            memory = "{:.2f}".format(float(data["memory"]))
+            memory = 100 * float(data["memory"])
         except:
-            memory = "-"
+            memory = None
 
         now = datetime.now()
 
@@ -192,7 +197,7 @@ class NodeTracker:
         if health["scp_time"] is None:
             scp_time = new_scp
         else:
-            β = self.SCP_DECAY
+            β = self.config["SCP_DECAY"]
             scp_time = health["scp_time"] * β + (1 - β) * new_scp
 
         self.lock.acquire()
@@ -247,7 +252,7 @@ class NodeTracker:
                          port=self.port, secret=self.secret)
         try:
             subprocess.run(shlex.split(cmd), check=True, 
-                           timeout=self.WAKE_TIMEOUT)
+                           timeout=self.config["WAKE_TIMEOUT"])
         except subprocess.SubprocessError:
             logger.info("[Wakeup] Failed to wake node: %s", lucky_winner)
             return
@@ -275,7 +280,7 @@ class NodeTracker:
         logger.debug("[Pruning] Thread started")
         while True:
             self.__prune_living()
-            time.sleep(self.PRUNE_INTERVAL)
+            time.sleep(self.config["PRUNE_INTERVAL"])
 
     def __prune_living(self):
         """Check the current alive/dead status for each node, add the info
@@ -293,8 +298,9 @@ class NodeTracker:
         now = datetime.now()
         for node, hist in self.history.items():
             health = self.node_health[node]
+            threshold = self.config["PRUNE_THRESHOLD"]
             if (health["is_alive"] and 
-                    health["last_update"] + timedelta(hours=1) < now):
+                    health["last_update"] + timedelta(minutes=threshold) < now):
                 # if the last update was too old, mark node as dead
                 health.update({"is_alive": False, "last_update": now})
                 self.living_nodes.discard(node)
@@ -324,10 +330,10 @@ class NodeTracker:
         start_time = time.time()
         try:
             output = subprocess.run(shlex.split(scp_cmd), check=True, 
-                                    timeout=self.SCP_TIMEOUT)
+                                    timeout=self.config["SCP_TIMEOUT"])
         except subprocess.SubprocessError:
             logger.debug("[SCP] Timed out: %s", nodename)
-            return self.SCP_TIMEOUT * 3
+            return self.config["SCP_TIMEOUT"] * 3
         return time.time() - start_time
 
 #endregion latency
@@ -335,10 +341,20 @@ class NodeTracker:
 
 if __name__ == '__main__':
     # test the module
-    tracker = NodeTracker('testnodes.txt', 60001)
-    tracker.PRUNE_INTERVAL = 100
-
+    config = {
+        "NODE_FILE": "testnodes.txt",
+        "AWS_PORT": 60001,
+        "SECRET": "foo",
+        "WAKE_DEAD": False,
+        "WAKE_TIMEOUT": 300,
+        "PRUNE_INTERVAL": 60,
+        "PRUNE_THRESHOLD": 1000,
+        "SCP_TIMEOUT": 30,
+        "SCP_DECAY": 0.4,
+    }
+    tracker = NodeTracker(config)
     tracker.start()
+
     while True:
         print(*tracker.report())
         time.sleep(10)

@@ -63,7 +63,7 @@
   {% endfor %}
 </table>
 
-<p>The following nodes are presumed dead:</p>
+<p>{{ dead|length }} nodes are presumed dead:</p>
 
 <ul>
   {% for node in dead %}

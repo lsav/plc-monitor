@@ -1,4 +1,5 @@
 import logging
+
 from flask import Flask, render_template
 from werkzeug.debug import DebuggedApplication
 
@@ -22,9 +23,8 @@ def create_app(settings_override=None):
     if app.debug:
         app.wsgi_app = DebuggedApplication(app.wsgi_app, evalex=True)
 
-    tracker = NodeTracker(app.config['NODE_FILE'], app.config['AWS_PORT'], 
-                          app.config['SECRET'])
-    tracker.start(app.config['WAKE_DEAD'])
+    tracker = NodeTracker(app.config)
+    tracker.start()
 
     @app.route('/')
     def index():
