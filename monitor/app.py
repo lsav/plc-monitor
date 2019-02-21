@@ -24,12 +24,19 @@ def create_app(settings_override=None):
 
     tracker = NodeTracker(app.config['NODE_FILE'], app.config['AWS_PORT'], 
                           app.config['SECRET'])
-    tracker.start()
+    tracker.start(app.config['WAKE_DEAD'])
 
     @app.route('/')
     def index():
         living, dead = tracker.report()
         return render_template('index.html', headings=tracker.HEADINGS, 
                                living=living, dead=dead)
+
+    @app.route('/best/<int:n>')
+    def get_best_nodes(n):
+        best = tracker.get_best_nodes(n)
+        if len(best):
+            return "\n".join(tracker.get_best_nodes(n))
+        return "No living nodes found :(", 418
 
     return app

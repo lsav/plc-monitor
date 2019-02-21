@@ -20,16 +20,18 @@ import time
 class NodeTracker:
     HEADINGS = ["Host", "Is Alive", "SCP Time (s)", "Uptime (%)", 
                 "CPU (%)", "Memory (%)", "Last Update (GMT)"]
-    SCP_TIMEOUT = 30  # seconds
+    SCP_TIMEOUT = 20  # seconds
     WAKE_TIMEOUT = 300  # 5 minutes
     PRUNE_INTERVAL = 15 * 60  # 15 minutes
+
+    SCP_DECAY = 0.5
 
     @property
     def HOST_DATUM(self):
         return {
             "uptime": 0,
             "is_alive": False, 
-            "scp_time": inf,
+            "scp_time": self.SCP_TIMEOUT * 2,
             "cpu": "0",
             "memory": "0",
             "last_update": datetime.now(),
@@ -70,19 +72,20 @@ class NodeTracker:
 
 #region public
 
-    def start(self):
+    def start(self, wake_dead=True):
         """Start tracking the nodes."""
         # listening for heartbeats
         t_client = threading.Thread(target=self.__heartbeat_thread)
         t_client.start()
 
-        # periodically prod a dead node to see if it's woken up
-        t_wake = threading.Thread(target=self.__wakeup_thread)
-        t_wake.start()
-
         # periodically recalculate the uptime
         t_prune = threading.Thread(target=self.__pruning_thread)
         t_prune.start()
+
+        # periodically prod a dead node to see if it's woken up
+        if wake_dead:
+            t_wake = threading.Thread(target=self.__wakeup_thread)
+            t_wake.start()
 
     def report(self):
         """Return a tuple (living, dead), where `living` is a 2D array
@@ -111,6 +114,20 @@ class NodeTracker:
 
         self.lock.release()
         return living, dead
+
+    def get_best_nodes(self, k):
+        """Return a list of the k best nodes. The best nodes have the highest 
+        uptime and the lowest scp time, in that order of importance.
+        """
+        if k > len(self.living_nodes):
+            return list(self.living_nodes)
+
+        def sort_key(x):
+            healt = self.node_health[x]
+            return (-health["uptime"], health["scp_time"])
+
+        sorted_nodes = sorted(self.living_nodes, key=sort_key)
+        return sorted_nodes[:k]
 
 #endregion public
 #region heartbeat
@@ -155,7 +172,8 @@ class NodeTracker:
         now = datetime.now()
 
         # check the node's scp time
-        scp_time = self.__scp_time(nodename)
+        β = self.SCP_DECAY
+        scp_time = health["scp_time"] * β + (1 - β) * self.__scp_time(nodename)
 
         self.lock.acquire()
 
@@ -246,8 +264,10 @@ class NodeTracker:
         If a node is "alive" but hasn't been heard from in over 1 hour,
         change it to dead.
         """
+        if not len(self.living_nodes):
+            return
+        
         logger.debug("[Pruning] Starting a pruning pass")
-
         self.lock.acquire()
 
         now = datetime.now()
@@ -277,16 +297,17 @@ class NodeTracker:
 
     def __scp_time(self, nodename):
         """Report the time it takes to successfully SCP a small file to a 
-        single host. If unsucessful or timed out, return math.inf.
+        single host. If unsucessful or timed out, return SCP_TIMEOUT * 2.
         """
         scp_cmd = "scp -i instance/planetlab.pem resources/sonnets.txt \
             ubc_cpen431_1@{host}:~".format(host=nodename)
         start_time = time.time()
         try:
             output = subprocess.run(shlex.split(scp_cmd), check=True, 
-                                                timeout=self.SCP_TIMEOUT)
+                                    timeout=self.SCP_TIMEOUT)
         except subprocess.SubprocessError:
-            return inf
+            logger.debug("[SCP] Timed out: %s", nodename)
+            return self.SCP_TIMEOUT * 2
         return time.time() - start_time
 
 #endregion latency
